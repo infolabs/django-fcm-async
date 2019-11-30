@@ -72,7 +72,7 @@ def send(recipients, template=None, context=None, title='',
          priority=None, render_on_delivery=False,
          log_level=None, commit=True, language=''):
 
-    recipients = ','.join(recipients)
+    recipients = '\n'.join(recipients)
     priority = parse_priority(priority)
 
     if log_level is None:
