@@ -43,10 +43,7 @@ def get_template_engine():
 
 
 def get_firebase_key_path():
-    key = getattr(settings, 'FIREBASE_KEY_PATH', None)
-    if key is None:
-        raise ValueError("No path to Firebase service account key in the project settings")
-    return key
+    return getattr(settings, 'FIREBASE_KEY_PATH', None)
 
 
 CONTEXT_FIELD_CLASS = get_config().get('CONTEXT_FIELD_CLASS', 'jsonfield.JSONField')

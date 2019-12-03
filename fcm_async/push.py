@@ -11,8 +11,8 @@ from django.db import connection as db_connection
 from django.template import Context, Template
 from django.utils.timezone import now
 
-from .models import PushNotification, Log, PRIORITY, STATUS
-from .settings import (get_batch_size, get_log_level, get_sending_order, get_threads_per_process)
+from .models import PushNotification, Log, PRIORITY, STATUS, FIREBASE_APP
+from .settings import get_batch_size, get_log_level, get_sending_order, get_threads_per_process
 from .logutils import setup_loghandlers
 
 
@@ -72,6 +72,9 @@ def send(recipients, template=None, context=None, title='',
          priority=None, render_on_delivery=False,
          log_level=None, commit=True, language=''):
 
+    if not FIREBASE_APP:
+        return None
+
     recipients = '\n'.join(recipients)
     priority = parse_priority(priority)
 
@@ -112,6 +115,9 @@ def send_many(kwargs_list):
     Internally, it uses Django's bulk_create command for efficiency reasons.
     Currently send_many() can't be used to send notifications with priority = 'now'.
     """
+    if not FIREBASE_APP:
+        return None
+
     notifications = []
     for kwargs in kwargs_list:
         notifications.append(send(commit=False, **kwargs))
@@ -134,6 +140,9 @@ def send_queued(processes=1, log_level=None):
     """
     Sends out all queued notifications that have scheduled_time less than now or None
     """
+    if not FIREBASE_APP:
+        return None
+
     queued_notifications = get_queued()
     total_sent, total_failed = 0, 0
     total_notifications = len(queued_notifications)

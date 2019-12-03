@@ -17,9 +17,9 @@ from .settings import context_field_class, get_log_level, get_template_engine, g
 PRIORITY = namedtuple('PRIORITY', 'low medium high now')._make(range(4))
 STATUS = namedtuple('STATUS', 'sent failed queued')._make(range(3))
 
-
-FIREBASE_CREDENTIALS = credentials.Certificate(get_firebase_key_path())
-FIREBASE_APP = firebase_admin.initialize_app(FIREBASE_CREDENTIALS)
+FIREBASE_KEY_PATH = get_firebase_key_path()
+FIREBASE_CREDENTIALS = credentials.Certificate(FIREBASE_KEY_PATH) if FIREBASE_KEY_PATH else None
+FIREBASE_APP = firebase_admin.initialize_app(FIREBASE_CREDENTIALS) if FIREBASE_CREDENTIALS else None
 
 
 @python_2_unicode_compatible
@@ -104,6 +104,8 @@ class PushNotification(models.Model):
         """
         Sends email and log the result.
         """
+        if not FIREBASE_APP:
+            return STATUS.failed
         try:
             self.send_firebase(self.notification_message())
             status = STATUS.sent
