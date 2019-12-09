@@ -91,12 +91,11 @@ class PushNotification(models.Model):
     def send_firebase(self, msg):
         firebase_message = messaging.MulticastMessage(
             tokens=self.to.splitlines(),
-            notification=messaging.Notification(title=msg['title'], body=msg['text']),
             android=messaging.AndroidConfig(
                 ttl=datetime.timedelta(seconds=3600),
                 priority='normal',
-                notification=messaging.AndroidNotification(),
             ),
+            data={'title': msg['title'], 'body': msg['text']}
         )
         messaging.send_multicast(firebase_message)
 
