@@ -91,6 +91,12 @@ class PushNotification(models.Model):
     def send_firebase(self, msg):
         firebase_message = messaging.MulticastMessage(
             tokens=self.to.splitlines(),
+            apns=messaging.APNSConfig(
+                headers={'apns-priority': '5', 'apns-push-type': 'background'},
+                payload=messaging.APNSPayload(
+                    aps=messaging.Aps(content_available=True),
+                ),
+            ),
             android=messaging.AndroidConfig(
                 ttl=datetime.timedelta(seconds=3600),
                 priority='normal',
