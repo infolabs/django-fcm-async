@@ -2,7 +2,10 @@
 # based on https://github.com/ui/django-post_office/blob/master/post_office/logutils.py
 import logging
 
-from post_office.compat import dictConfig
+try:
+    from post_office.compat import dictConfig
+except ImportError:
+    from logging.config import dictConfig
 
 
 # Taken from https://github.com/nvie/rq/blob/master/rq/logutils.py

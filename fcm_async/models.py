@@ -2,7 +2,12 @@
 # based on https://github.com/ui/django-post_office/blob/master/post_office/models.py
 
 from collections import namedtuple
-from post_office.compat import text_type, smart_text
+
+try:
+    from post_office.compat import smart_text
+except ImportError:
+    from django.utils.encoding import smart_str as smart_text
+
 import datetime
 import firebase_admin
 from firebase_admin import credentials, messaging
@@ -171,4 +176,11 @@ class Log(models.Model):
         verbose_name_plural = _("Logs")
 
     def __str__(self):
-        return text_type(self.date)
+        ret = 'date'
+        try:
+            from post_office.compat import text_type
+            ret = text_type(self.date)
+        except ImportError:
+            ret = str(self.date)
+
+        return ret

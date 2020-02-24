@@ -1,7 +1,11 @@
 # -*- coding: utf-8 -*-
 # based on https://github.com/ui/django-post_office/blob/master/post_office/settings.py
 
-from post_office.compat import import_attribute
+
+try:
+    from post_office.compat import import_attribute
+except ImportError:
+    from django.utils.module_loading import import_string as import_attribute
 
 from django.conf import settings
 from django.template import engines as template_engines
