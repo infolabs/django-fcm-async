@@ -17,7 +17,7 @@ class Command(BaseCommand):
                             type=int, default=90,
                             help="Cleanup notifications older than this many days, defaults to 90.")
 
-    def handle(self, verbosity, days, delete_attachments, **options):
+    def handle(self, verbosity, days, **options):
         # Delete notifications and their related logs and queued created before X days
 
         cutoff_date = now() - datetime.timedelta(days)
