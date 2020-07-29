@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 # based on https://github.com/ui/django-post_office/blob/master/post_office/models.py
 
+import re
 from collections import namedtuple
 
 try:
@@ -15,6 +16,8 @@ from firebase_admin import credentials, messaging
 from django.db import models
 from django.utils.encoding import python_2_unicode_compatible
 from django.utils.translation import ugettext_lazy as _
+from django.template.backends.django import DjangoTemplates
+from django.template import Context
 
 from .settings import context_field_class, get_log_level, get_template_engine, get_firebase_key_path
 
@@ -25,6 +28,8 @@ STATUS = namedtuple('STATUS', 'sent failed queued')._make(range(3))
 FIREBASE_KEY_PATH = get_firebase_key_path()
 FIREBASE_CREDENTIALS = credentials.Certificate(FIREBASE_KEY_PATH) if FIREBASE_KEY_PATH else None
 FIREBASE_APP = firebase_admin.initialize_app(FIREBASE_CREDENTIALS) if FIREBASE_CREDENTIALS else None
+
+NON_ANCHOR_TAGS_RE = re.compile(r'(<[^aA/].*?>|</[^aA].*?>)')
 
 
 @python_2_unicode_compatible
@@ -76,14 +81,24 @@ class PushNotification(models.Model):
 
         return self.prepare_notification_message()
 
+    def render_and_clean(self, engine, template_code, context_dict):
+        context = Context(context_dict, autoescape=False)
+        template = engine.from_string(template_code)
+        text = template.template.render(context)
+        return NON_ANCHOR_TAGS_RE.sub(r'', text)
+
     def prepare_notification_message(self):
         """
         Returns a django dict
         """
         if self.template is not None:
             engine = get_template_engine()
-            title = engine.from_string(self.template.subject).render(self.context)
-            text = engine.from_string(self.template.content).render(self.context)
+            if isinstance(engine, DjangoTemplates):
+                title = self.render_and_clean(engine, self.template.subject, self.context)
+                text = self.render_and_clean(engine, self.template.content, self.context)
+            else:
+                title = engine.from_string(self.template.subject).render(self.context)
+                text = engine.from_string(self.template.content).render(self.context)
         else:
             title = smart_text(self.title)
             text = self.text
