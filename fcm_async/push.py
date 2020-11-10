@@ -75,6 +75,9 @@ def send(recipients, template=None, context=None, title='',
     if not FIREBASE_APP:
         return None
 
+    if not recipients:
+        return None
+
     recipients = '\n'.join(recipients)
     priority = parse_priority(priority)
 
