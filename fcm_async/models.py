@@ -95,7 +95,8 @@ class PushNotification(models.Model):
             engine = get_template_engine()
             if isinstance(engine, DjangoTemplates):
                 title = self.render_and_clean(engine, self.template.subject, self.context)
-                text = self.render_and_clean(engine, self.template.content, self.context)
+                content = self.template.html_content if self.template.html_content else self.template.content
+                text = self.render_and_clean(engine, content, self.context)
             else:
                 title = engine.from_string(self.template.subject).render(self.context)
                 text = engine.from_string(self.template.content).render(self.context)
