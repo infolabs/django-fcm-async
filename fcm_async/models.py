@@ -12,9 +12,9 @@ except ImportError:
 import datetime
 import firebase_admin
 from firebase_admin import credentials, messaging
+from six import python_2_unicode_compatible
 
 from django.db import models
-from django.utils.encoding import python_2_unicode_compatible
 from django.utils.translation import ugettext_lazy as _
 from django.template.backends.django import DjangoTemplates
 from django.template import Context
