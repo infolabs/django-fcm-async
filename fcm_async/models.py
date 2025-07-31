@@ -124,7 +124,7 @@ class PushNotification(models.Model):
             ),
             data={'title': msg['title'], 'body': msg['text']}
         )
-        messaging.send_multicast(firebase_message)
+        messaging.send_each_for_multicast(firebase_message)
 
     def dispatch(self, log_level=None, commit=True):
         """
