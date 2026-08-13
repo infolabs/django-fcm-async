@@ -6,13 +6,16 @@ from multiprocessing.dummy import Pool as ThreadPool
 from post_office.models import EmailTemplate
 from post_office.utils import get_email_template, split_emails, parse_priority
 
-from django.db.models import Q
+from django.db.models import F, Q, Value
+from django.db.models.functions import Coalesce
 from django.db import connection as db_connection
 from django.template import Context, Template
 from django.utils.timezone import now
 
-from .models import PushNotification, Log, PRIORITY, STATUS, FIREBASE_APP
-from .settings import get_batch_size, get_log_level, get_sending_order, get_threads_per_process
+from .models import (PushNotification, Log, PRIORITY, STATUS, FIREBASE_APP, DeliveryResult,
+                     handle_invalid_tokens, is_transient_error, warmup_credentials)
+from .settings import (get_batch_size, get_log_level, get_retry_interval, get_sending_order,
+                       get_threads_per_process)
 from .logutils import setup_loghandlers
 
 
@@ -194,20 +197,19 @@ def _send_bulk(notifications, uses_multiprocessing=True, log_level=None):
     if log_level is None:
         log_level = get_log_level()
 
-    sent_notifications = []
-    failed_notifications = []  # This is a list of two tuples (notification, exception)
+    results = []  # This is a list of two tuples (notification, DeliveryResult)
+    prepared_notifications = []
     notification_count = len(notifications)
 
     logger.info('Process started, sending %s notifications' % notification_count)
 
     def send(notification):
-        try:
-            notification.dispatch(log_level=log_level, commit=False)
-            sent_notifications.append(notification)
+        result = notification.deliver()
+        if result.status == STATUS.sent:
             logger.debug('Successfully sent notification #%d' % notification.id)
-        except Exception as e:
-            logger.debug('Failed to send notification #%d' % notification.id)
-            failed_notifications.append((notification, e))
+        else:
+            logger.debug('Failed to send notification #%d: %s' % (notification.id, result.message))
+        results.append((notification, result))
 
     # Prepare notifications before we send these to threads for sending
     # So we don't need to access the DB from within threads
@@ -217,50 +219,67 @@ def _send_bulk(notifications, uses_multiprocessing=True, log_level=None):
         try:
             notification.prepare_notification_message()
         except Exception as e:
-            failed_notifications.append((notification, e))
+            results.append((notification, DeliveryResult(STATUS.failed, str(e), type(e).__name__,
+                                                         is_transient_error(e), [], 0, 0)))
+        else:
+            prepared_notifications.append(notification)
 
-    number_of_threads = min(get_threads_per_process(), notification_count)
-    pool = ThreadPool(number_of_threads)
+    if prepared_notifications:
+        # Обновляем токен доступа до старта потоков, иначе одновременный refresh в каждом
+        # потоке роняет отправку целиком
+        warmup_credentials()
 
-    pool.map(send, notifications)
-    pool.close()
-    pool.join()
+        number_of_threads = min(get_threads_per_process(), len(prepared_notifications))
+        pool = ThreadPool(number_of_threads)
+
+        pool.map(send, prepared_notifications)
+        pool.close()
+        pool.join()
+
+    sent_ids, failed_ids, retry_ids, invalid_tokens = [], [], [], []
+    for notification, result in results:
+        invalid_tokens.extend(result.invalid_tokens)
+        if result.status == STATUS.sent:
+            sent_ids.append(notification.id)
+        elif notification.should_retry(result):
+            retry_ids.append(notification.id)
+        else:
+            failed_ids.append(notification.id)
 
     # Update statuses of sent and failed notifications
-    notification_ids = [notification.id for notification in sent_notifications]
-    PushNotification.objects.filter(id__in=notification_ids).update(status=STATUS.sent)
+    PushNotification.objects.filter(id__in=sent_ids).update(status=STATUS.sent, last_updated=now())
+    PushNotification.objects.filter(id__in=failed_ids).update(status=STATUS.failed, last_updated=now())
 
-    notification_ids = [notification.id for (notification, e) in failed_notifications]
-    PushNotification.objects.filter(id__in=notification_ids).update(status=STATUS.failed)
+    # Временные ошибки FCM возвращаем в очередь, иначе уведомление теряется навсегда
+    if retry_ids:
+        PushNotification.objects.filter(id__in=retry_ids).update(
+            status=STATUS.queued,
+            scheduled_time=now() + get_retry_interval(),
+            number_of_retries=Coalesce(F('number_of_retries'), Value(0)) + Value(1),
+            last_updated=now()
+        )
+
+    handle_invalid_tokens(invalid_tokens)
 
     # If log level is 0, log nothing, 1 logs only sending failures
     # and 2 means log both successes and failures
-    if log_level >= 1:
+    logs = []
+    for notification, result in results:
+        if result.status == STATUS.failed:
+            if log_level >= 1:
+                logs.append(Log(notification=notification, status=STATUS.failed, message=result.message,
+                                exception_type=result.exception_type))
+        elif log_level == 2:
+            logs.append(Log(notification=notification, status=STATUS.sent, message=result.message,
+                            exception_type=result.exception_type))
 
-        logs = []
-        for (notification, exception) in failed_notifications:
-            logs.append(
-                Log(notification=notification, status=STATUS.failed,
-                    message=str(exception),
-                    exception_type=type(exception).__name__)
-            )
-
-        if logs:
-            Log.objects.bulk_create(logs)
-
-    if log_level == 2:
-
-        logs = []
-        for notification in sent_notifications:
-            logs.append(Log(notification=notification, status=STATUS.sent))
-
-        if logs:
-            Log.objects.bulk_create(logs)
+    if logs:
+        Log.objects.bulk_create(logs)
 
     logger.info(
-        'Process finished, %s attempted, %s sent, %s failed' % (
-            notification_count, len(sent_notifications), len(failed_notifications)
+        'Process finished, %s attempted, %s sent, %s failed, %s requeued' % (
+            notification_count, len(sent_ids), len(failed_ids), len(retry_ids)
         )
     )
 
-    return len(sent_notifications), len(failed_notifications)
+    return len(sent_ids), len(failed_ids) + len(retry_ids)

@@ -23,12 +23,14 @@ class LogInline(admin.StackedInline):
 
 def requeue(modeladmin, request, queryset):
     """An admin action to requeue notifications."""
-    queryset.update(status=STATUS.queued)
+    # Сбрасываем счётчик и отложенное время, иначе уведомление, исчерпавшее автоматические
+    # попытки, останется ждать в очереди
+    queryset.update(status=STATUS.queued, scheduled_time=None, number_of_retries=None)
 
 
 class NotificationAdmin(admin.ModelAdmin):
     list_display = ('id', 'title_display', 'template',
-                    'status', 'last_updated')
+                    'status', 'number_of_retries', 'last_updated')
     search_fields = ['to', 'title']
     date_hierarchy = 'last_updated'
     inlines = [LogInline]
