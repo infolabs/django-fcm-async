@@ -3,5 +3,6 @@
 !graft/
 graft/.cache/
 graft/.graph/
-docs/
+# Черновики docs/other не ищем. Канонические документы в docs/ — ищем.
+docs/other/
 */migrations/**
